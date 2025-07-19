@@ -32,7 +32,7 @@ app.use(cors({
   optionsSuccessStatus: 200
 }));
 
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 5002;
 
 // Simple health check
 app.get('/', (req, res) => {
