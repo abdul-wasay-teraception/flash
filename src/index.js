@@ -30,8 +30,8 @@ app.use(cors({
       'http://localhost:3000', 
       'http://192.168.18.118:5173',
       'https://buyflashnow.com',
-      'https://www.buyflashnow.com',
-      'https://flash-production-eb2f.up.railway.app'
+      'https://www.buyflashnow.com'
+      // Removed backend URL - backends don't make requests to themselves
     ];
     
     if (allowedOrigins.includes(origin)) {
