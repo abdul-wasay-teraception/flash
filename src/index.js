@@ -19,28 +19,33 @@ app.use(cookieParser());
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(express.json({ limit: '10mb' })); // Increased limit for base64 images
 
-// Single comprehensive CORS configuration for Railway
+// Enhanced CORS configuration for Railway with manual header setting
+const allowedOrigins = [
+  'http://localhost:5173', 
+  'http://localhost:3000', 
+  'http://192.168.18.118:5173',
+  'https://buyflashnow.com',
+  'https://www.buyflashnow.com'
+];
+
+// First, use the cors middleware
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl, etc.)
-    if (!origin) return callback(null, true);
+    console.log('🌍 Request from origin:', origin);
     
-    const allowedOrigins = [
-      'http://localhost:5173', 
-      'http://localhost:3000', 
-      'http://192.168.18.118:5173',
-      'https://buyflashnow.com',
-      'https://www.buyflashnow.com'
-      // Removed backend URL - backends don't make requests to themselves
-    ];
+    // Allow requests with no origin (like mobile apps, Postman, etc.)
+    if (!origin) {
+      console.log('✅ No origin - allowing request');
+      return callback(null, true);
+    }
     
     if (allowedOrigins.includes(origin)) {
       console.log('✅ CORS allowed for origin:', origin);
       return callback(null, true);
+    } else {
+      console.log('❌ CORS blocked for origin:', origin);
+      return callback(new Error('Not allowed by CORS'), false);
     }
-    
-    console.log('❌ CORS blocked origin:', origin);
-    return callback(new Error('Not allowed by CORS'), false);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -49,46 +54,74 @@ app.use(cors({
   preflightContinue: false
 }));
 
-// Simple request logging middleware
+// Add manual CORS headers as backup (Railway might be overriding the cors middleware)
 app.use((req, res, next) => {
-  console.log('🌐 Request:', req.method, req.url, 'from:', req.headers.origin || 'no-origin');
+  const origin = req.headers.origin;
+  
+  if (!origin || allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin || '*');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Origin, X-Requested-With');
+    
+    console.log('🔧 Manual CORS headers set for origin:', origin);
+  }
+  
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    console.log('✈️ Handling OPTIONS preflight request');
+    return res.status(200).end();
+  }
+  
   next();
 });
 
-const PORT = process.env.PORT || 5001;
+// Add error handling for uncaught exceptions
+process.on('uncaughtException', (err) => {
+  console.error('❌ Uncaught Exception:', err);
+});
 
-// Create HTTP server
+process.on('unhandledRejection', (err) => {
+  console.error('❌ Unhandled Rejection:', err);
+});
+
+// Simple request logging
+app.use((req, res, next) => {
+  console.log(`📍 ${req.method} ${req.path} - Origin: ${req.headers.origin || 'none'}`);
+  next();
+});
+
+const PORT = process.env.PORT || 8080;
+
 const server = createServer(app);
-
-// Create Socket.io server
 const io = new Server(server, {
   cors: {
-    origin: [
-      'http://localhost:5173', 
-      'http://localhost:3000',
-      'http://192.168.18.118:5173',
-      'https://buyflashnow.com',
-      'https://www.buyflashnow.com'
-    ],
+    origin: allowedOrigins,
     methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true
   }
 });
 
-// Make io available to routes
-app.use((req, res, next) => {
-  req.io = io;
-  next();
+// Health check route
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'Server is running!',
+    timestamp: new Date().toISOString(),
+    port: PORT,
+    env: process.env.NODE_ENV || 'development',
+    corsOrigins: allowedOrigins
+  });
 });
 
-// Test route to check CORS
+// Test route for CORS debugging
 app.get('/api/test', (req, res) => {
   res.json({ 
     message: 'CORS test successful!', 
     origin: req.headers.origin,
     timestamp: new Date().toISOString(),
-    headers: req.headers
+    headers: req.headers,
+    allowedOrigins: allowedOrigins
   });
 });
 
@@ -110,21 +143,19 @@ io.on('connection', (socket) => {
 const initializeApp = async () => {
   try {
     await connectDB();
+    console.log('✅ Database connected successfully');
     await createDefaultAdmin();
     console.log('✅ Database and admin initialized');
+    
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log('🔒 CORS allowed origins:', allowedOrigins);
+    });
   } catch (err) {
-    console.error('❌ MongoDB Atlas connection failed:', err.message);
-    console.log('🔄 Server will start anyway for development...');
-    console.log('💡 Try these solutions:');
-    console.log('   1. Use mobile hotspot');
-    console.log('   2. Change DNS to 8.8.8.8');
-    console.log('   3. Try again later when internet is stable');
+    console.error('❌ Server initialization failed:', err);
+    process.exit(1);
   }
 };
 
-// Start server
-initializeApp().then(() => {
-  server.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-  });
-});
+initializeApp();
