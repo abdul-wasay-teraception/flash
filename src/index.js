@@ -19,21 +19,41 @@ app.use(cookieParser());
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(express.json({ limit: '10mb' })); // Increased limit for base64 images
 
-// Simple CORS configuration
+// Single comprehensive CORS configuration for Railway
 app.use(cors({
-   origin: [
-    'http://localhost:5173', 
-    'http://localhost:3000', 
-    'http://192.168.18.118:5173',
-   
-    'https://buyflashnow.com',  // ← Make sure this is included
-    'https://www.buyflashnow.com'  // ← Add www version too
-  ],
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      'http://localhost:5173', 
+      'http://localhost:3000', 
+      'http://192.168.18.118:5173',
+      'https://buyflashnow.com',
+      'https://www.buyflashnow.com',
+      'https://flash-production-eb2f.up.railway.app'
+    ];
+    
+    if (allowedOrigins.includes(origin)) {
+      console.log('✅ CORS allowed for origin:', origin);
+      return callback(null, true);
+    }
+    
+    console.log('❌ CORS blocked origin:', origin);
+    return callback(new Error('Not allowed by CORS'), false);
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
-  optionsSuccessStatus: 200
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
+  optionsSuccessStatus: 200,
+  preflightContinue: false
 }));
+
+// Simple request logging middleware
+app.use((req, res, next) => {
+  console.log('🌐 Request:', req.method, req.url, 'from:', req.headers.origin || 'no-origin');
+  next();
+});
 
 const PORT = process.env.PORT || 5001;
 
@@ -47,8 +67,8 @@ const io = new Server(server, {
       'http://localhost:5173', 
       'http://localhost:3000',
       'http://192.168.18.118:5173',
-       'http://buyflashnow.com',
-    'https://buyflashnow.com'
+      'https://buyflashnow.com',
+      'https://www.buyflashnow.com'
     ],
     methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type', 'Authorization'],
