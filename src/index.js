@@ -82,6 +82,16 @@ app.use((req, res, next) => {
   next();
 });
 
+// Test route to check CORS
+app.get('/api/test', (req, res) => {
+  res.json({ 
+    message: 'CORS test successful!', 
+    origin: req.headers.origin,
+    timestamp: new Date().toISOString(),
+    headers: req.headers
+  });
+});
+
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/deals', dealRoutes);
