@@ -105,25 +105,19 @@ const io = new Server(server, {
 
 // Health check route
 app.get('/', (req, res) => {
-  res.json({ 
-    status: 'Server is running!',
+  console.log('📍 Health check requested from:', req.headers.origin || 'none');
+  res.status(200).json({ 
+    status: 'OK',
     timestamp: new Date().toISOString(),
-    port: PORT,
-    env: process.env.NODE_ENV || 'development',
-    corsOrigins: allowedOrigins
+    port: PORT
   });
 });
 
-// Test route for CORS debugging
-app.get('/api/test', (req, res) => {
-  res.json({ 
-    message: 'CORS test successful!', 
-    origin: req.headers.origin,
-    timestamp: new Date().toISOString(),
-    headers: req.headers,
-    allowedOrigins: allowedOrigins
-  });
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'healthy' });
 });
+
+
 
 // API Routes
 app.use('/api/auth', authRoutes);
@@ -148,7 +142,7 @@ const initializeApp = async () => {
     console.log('✅ Database and admin initialized');
     
     server.listen(PORT, '0.0.0.0', () => {
-      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`🚀 Server running on 0.0.0.0:${PORT}`);
       console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log('🔒 CORS allowed origins:', allowedOrigins);
     });
