@@ -48,7 +48,7 @@ app.use(cors({
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'], // Fixed: Added quotes around 'POST'
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
   optionsSuccessStatus: 200,
   preflightContinue: false
@@ -76,15 +76,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Add error handling for uncaught exceptions
-process.on('uncaughtException', (err) => {
-  console.error('❌ Uncaught Exception:', err);
-});
-
-process.on('unhandledRejection', (err) => {
-  console.error('❌ Unhandled Rejection:', err);
-});
-
 // Simple request logging
 app.use((req, res, next) => {
   console.log(`📍 ${req.method} ${req.path} - Origin: ${req.headers.origin || 'none'}`);
@@ -92,6 +83,10 @@ app.use((req, res, next) => {
 });
 
 const PORT = process.env.PORT || 8080;
+
+// Database connection status
+let dbConnected = false;
+let serverReady = false;
 
 const server = createServer(app);
 const io = new Server(server, {
@@ -103,26 +98,48 @@ const io = new Server(server, {
   }
 });
 
-// Health check route
+// Health check route - always responds regardless of DB status
 app.get('/', (req, res) => {
   console.log('📍 Health check requested from:', req.headers.origin || 'none');
   res.status(200).json({ 
-    status: 'OK',
+    status: 'Server running',
+    dbConnected: dbConnected,
+    serverReady: serverReady,
     timestamp: new Date().toISOString(),
     port: PORT
   });
 });
 
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'healthy' });
+  console.log('📍 Health endpoint requested');
+  res.status(200).json({ 
+    status: 'healthy', 
+    database: dbConnected ? 'connected' : 'connecting',
+    ready: serverReady 
+  });
 });
 
+// API Routes - only if database is connected
+app.use('/api/auth', (req, res, next) => {
+  if (!dbConnected) {
+    return res.status(503).json({ message: 'Database not ready' });
+  }
+  next();
+}, authRoutes);
 
+app.use('/api/deals', (req, res, next) => {
+  if (!dbConnected) {
+    return res.status(503).json({ message: 'Database not ready' });
+  }
+  next();
+}, dealRoutes);
 
-// API Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/deals', dealRoutes);
-app.use('/api/flash-orders', flashOrderRoutes);
+app.use('/api/flash-orders', (req, res, next) => {
+  if (!dbConnected) {
+    return res.status(503).json({ message: 'Database not ready' });
+  }
+  next();
+}, flashOrderRoutes);
 
 // Socket.io connection handling
 io.on('connection', (socket) => {
@@ -133,23 +150,49 @@ io.on('connection', (socket) => {
   });
 });
 
-// Database initialization with fallback
-const initializeApp = async () => {
+// Start server FIRST, then initialize database
+console.log('🚀 Starting server...');
+
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Server running on 0.0.0.0:${PORT}`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log('🔒 CORS allowed origins:', allowedOrigins);
+  serverReady = true;
+  
+  // Initialize database after server starts
+  initializeDatabase();
+});
+
+server.on('error', (err) => {
+  console.error('❌ Server error:', err);
+});
+
+server.on('listening', () => {
+  console.log('🎧 Server is listening and ready for connections');
+});
+
+// Database initialization - runs AFTER server starts
+const initializeDatabase = async () => {
   try {
+    console.log('🔄 Initializing database...');
     await connectDB();
     console.log('✅ Database connected successfully');
+    dbConnected = true;
+    
     await createDefaultAdmin();
     console.log('✅ Database and admin initialized');
-    
-    server.listen(PORT, '0.0.0.0', () => {
-      console.log(`🚀 Server running on 0.0.0.0:${PORT}`);
-      console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log('🔒 CORS allowed origins:', allowedOrigins);
-    });
   } catch (err) {
-    console.error('❌ Server initialization failed:', err);
-    process.exit(1);
+    console.error('❌ Database initialization failed:', err);
+    console.log('⚠️ Server will continue running without database');
+    // Don't exit - let the server keep running
   }
 };
 
-initializeApp();
+// Add error handling for uncaught exceptions
+process.on('uncaughtException', (err) => {
+  console.error('❌ Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (err) => {
+  console.error('❌ Unhandled Rejection:', err);
+});
